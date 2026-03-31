@@ -118,7 +118,7 @@ function txtMenu() {
   return (
     `¡Hola! 👋 Bienvenido a *🧢 The Cap Store Online*\n` +
     `Tu tienda de gorras colombianas de calidad.\n` +
-    `💰 Todas las gorras: *${fmt(65000)}* c/u\n\n` +
+    `💰 Agropecuario & Colombia: *${fmt(75000)}* | Luxury: *${fmt(70000)}* c/u\n\n` +
     `¿Qué colección quieres ver?\n\n` +
     `*1* — 🌾 Colección Agropecuario 2026\n` +
     `*2* — 💎 New Era Colección Luxury\n` +
@@ -161,7 +161,7 @@ async function startCollection(chatId, session, key) {
 
 async function sendCollectionList(chatId, key) {
   const col = collections[key];
-  let msg = `${col.emoji} *${col.nombre}*\n💰 Precio: *${fmt(65000)}* c/u\n\n`;
+  let msg = `${col.emoji} *${col.nombre}*\n💰 Precio: *${fmt(col.precio)}* c/u\n\n`;
   col.products.forEach((p, i) => { msg += `*${i + 1}*. ${p.name}\n`; });
   msg += `\nEscribe el *número* del producto para ver la foto.\n_*0* para volver al menú_`;
   await send(chatId, msg);
