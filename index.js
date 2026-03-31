@@ -762,7 +762,7 @@ client.on('message', async msg => {
 // El sitio web hace POST a estos endpoints para enviar correos via Gmail/nodemailer.
 // Usar la misma cuenta y contraseña de aplicación del .env
 
-const API_PORT = process.env.API_PORT || 3333;
+const API_PORT = process.env.API_PORT || 8080;
 const API_KEY  = process.env.API_KEY  || 'capsstore2026';
 
 const api = express();
