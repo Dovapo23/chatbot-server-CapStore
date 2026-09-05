@@ -2,7 +2,6 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
-const twilio   = require('twilio');
 const path     = require('path');
 const express  = require('express');
 const cors     = require('cors');
@@ -14,7 +13,7 @@ const { saveOrder, isDuplicateOrder } = require('./db');
 // ─── IMÁGENES ─────────────────────────────────────────────────────────────────
 // Mismo cálculo de raíz que products.js (path.resolve(__dirname, '..', 'images')),
 // necesario aquí para convertir la ruta absoluta de cada producto en una URL
-// pública que Twilio pueda descargar (no acepta rutas de archivo locales).
+// pública que Meta pueda descargar (no acepta rutas de archivo locales).
 const IMAGES_ROOT = path.resolve(__dirname, '..', 'images');
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 
@@ -60,21 +59,46 @@ function norm(text) {
 
 const cartTotal = cart => cart.reduce((s, i) => s + i.price, 0);
 
+// ─── CLIENTE META (WhatsApp Cloud API) ───────────────────────────────────────
+// chatId conserva el formato interno "whatsapp:+57..." en toda la app (sesiones,
+// mailer, db); solo aquí se traduce al número plano que espera la Graph API.
+const META_API_VERSION = 'v20.0';
+
+async function metaApiCall(payload) {
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${process.env.META_PHONE_NUMBER_ID}/messages`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.META_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Meta API ${res.status}: ${errBody}`);
+  }
+  return res.json();
+}
+
 async function send(chatId, text) {
-  await twilioClient.messages.create({
-    from: process.env.TWILIO_WHATSAPP_FROM,
-    to:   chatId,
-    body: text,
+  const to = chatId.replace('whatsapp:', '').replace('+', '');
+  await metaApiCall({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'text',
+    text: { body: text },
   });
 }
 
 async function sendImg(chatId, imgPath, caption) {
+  const to = chatId.replace('whatsapp:', '').replace('+', '');
   try {
-    await twilioClient.messages.create({
-      from:     process.env.TWILIO_WHATSAPP_FROM,
-      to:       chatId,
-      body:     caption,
-      mediaUrl: [imagePublicUrl(imgPath)],
+    await metaApiCall({
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: { link: imagePublicUrl(imgPath), caption },
     });
   } catch (err) {
     console.error('❌ Imagen no enviada:', imgPath, err.message);
@@ -728,40 +752,48 @@ async function handleMessage(msg) {
   }
 }
 
-// ─── CLIENTE TWILIO (WhatsApp Business API) ──────────────────────────────────
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-
 // ─── API HTTP — webhook de WhatsApp + notificaciones desde el sitio web ──────
 const API_PORT = process.env.API_PORT || 8080;
 const API_KEY  = process.env.API_KEY  || 'capsstore2026';
 
 const api = express();
-api.set('trust proxy', true); // Railway termina TLS antes del proxy; sin esto, twilio.webhook cree que la conexión es HTTP y rechaza la firma con 403
 api.use(cors());
 
-// Sirve las fotos de producto como estáticas para que Twilio pueda
-// descargarlas por URL (mediaUrl no acepta rutas de disco).
+// Sirve las fotos de producto como estáticas para que Meta pueda
+// descargarlas por URL (los mensajes de imagen solo aceptan un link público).
 api.use('/images', express.static(IMAGES_ROOT));
 
-// ─── WEBHOOK DE WHATSAPP (Twilio) ─────────────────────────────────────────────
-// Twilio envía application/x-www-form-urlencoded, no JSON, en sus webhooks.
-api.post(
-  '/whatsapp/webhook',
-  express.urlencoded({ extended: false }),
-  twilio.webhook({ validate: process.env.NODE_ENV === 'production' }),
-  async (req, res) => {
-    // Responder de inmediato con TwiML vacío: las respuestas reales del bot
-    // se envían por separado vía twilioClient.messages.create() (send/sendImg),
-    // no como contenido de esta respuesta HTTP.
-    res.type('text/xml').send('<Response></Response>');
+// ─── WEBHOOK DE WHATSAPP (Meta Cloud API) ────────────────────────────────────
+// Meta envía JSON. El GET es la verificación única del webhook al configurarlo
+// en el panel de Meta; el POST llega en cada evento (mensajes, estados, etc.).
+api.get('/whatsapp/webhook', (req, res) => {
+  const mode      = req.query['hub.mode'];
+  const token     = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-    try {
-      await handleMessage({ from: req.body.From, body: req.body.Body });
-    } catch (err) {
-      console.error('Error en mensaje de WhatsApp:', err.code, err.status, err.message, err.moreInfo);
-    }
+  if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
   }
-);
+  res.sendStatus(403);
+});
+
+api.post('/whatsapp/webhook', express.json(), async (req, res) => {
+  // Responder de inmediato: las respuestas reales del bot se envían por
+  // separado vía metaApiCall() (send/sendImg), no como contenido de esta respuesta.
+  res.sendStatus(200);
+
+  try {
+    const value   = req.body?.entry?.[0]?.changes?.[0]?.value;
+    const message = value?.messages?.[0];
+    if (!message) return; // eventos que no son mensajes entrantes (statuses, etc.)
+
+    const chatId = `whatsapp:+${message.from}`;
+    const body   = message.type === 'text' ? message.text.body : '';
+    await handleMessage({ from: chatId, body });
+  } catch (err) {
+    console.error('Error en mensaje de WhatsApp:', err.message);
+  }
+});
 
 // El resto de rutas de este servidor (/enviar-correo) sí van en JSON.
 api.use(express.json());
