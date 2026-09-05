@@ -758,7 +758,7 @@ api.post(
     try {
       await handleMessage({ from: req.body.From, body: req.body.Body });
     } catch (err) {
-      console.error('Error en mensaje de WhatsApp:', err.message);
+      console.error('Error en mensaje de WhatsApp:', err.code, err.status, err.message, err.moreInfo);
     }
   }
 );
