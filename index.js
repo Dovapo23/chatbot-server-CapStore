@@ -736,6 +736,7 @@ const API_PORT = process.env.API_PORT || 8080;
 const API_KEY  = process.env.API_KEY  || 'capsstore2026';
 
 const api = express();
+api.set('trust proxy', true); // Railway termina TLS antes del proxy; sin esto, twilio.webhook cree que la conexión es HTTP y rechaza la firma con 403
 api.use(cors());
 
 // Sirve las fotos de producto como estáticas para que Twilio pueda
