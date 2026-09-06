@@ -64,6 +64,17 @@ async function volverAlMenu(chatId, session) {
   session.datosMayoreo = {};
   session.prevState = null;
   session.ciudadCandidatos = null;
+
+  if (session.cart.length > 0) {
+    const n = session.cart.length;
+    await send(
+      chatId,
+      `🛒 Ya tienes *${n}* gorra${n > 1 ? 's' : ''} seleccionada${n > 1 ? 's' : ''} en tu carrito — *${fmt(cartTotal(session.cart))}*\n\n` +
+      `Escribe *4* para verlo y continuar con tu pedido, o elige otra opción:\n\n${txtMenu()}`
+    );
+    return;
+  }
+
   await send(chatId, txtMenu());
 }
 
