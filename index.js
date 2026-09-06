@@ -28,7 +28,9 @@ const sessions = new Map();
 
 function getSession(chatId) {
   if (!sessions.has(chatId)) sessions.set(chatId, newSession());
-  return sessions.get(chatId);
+  const session = sessions.get(chatId);
+  session.lastActivity = Date.now();
+  return session;
 }
 
 function newSession() {
@@ -41,13 +43,22 @@ function newSession() {
     datosMayoreo: {},   // { nombre, telefono, cantidad, coleccion, correo }
     referencia: null,   // referencia única del pedido (generada al entrar en confirmacion)
     prevState: null,    // estado anterior al desvío de consulta_ciudad / mayoreo
-    ciudadCandidatos: null  // candidatos cuando hay ambigüedad
+    ciudadCandidatos: null,  // candidatos cuando hay ambigüedad
+    lastActivity: Date.now()  // usado para limpiar sesiones abandonadas (ver setInterval al final)
   };
 }
 
 function resetSession(chatId) {
   sessions.set(chatId, newSession());
 }
+
+// Estados en los que el cliente está dictando datos de texto libre (nombre,
+// dirección, etc.) — aquí "hola"/"hi"/etc. como PREFIJO es peligroso porque
+// puede ser el inicio real del dato (ej. una dirección "Hipódromo, Bogotá...").
+const ESTADOS_CAPTURA = [
+  'datos_nombre', 'datos_telefono', 'datos_direccion', 'datos_ciudad', 'datos_depto', 'datos_correo', 'confirmacion',
+  'mayoreo_intro', 'mayoreo_nombre', 'mayoreo_telefono', 'mayoreo_cantidad', 'mayoreo_coleccion', 'mayoreo_correo', 'mayoreo_confirmar',
+];
 
 // ─── UTILIDADES ───────────────────────────────────────────────────────────────
 const fmt = n => `$${n.toLocaleString('es-MX')}`;
@@ -163,7 +174,7 @@ async function handleMenu(chatId, text, session) {
   if (text === '5') return send(chatId, txtContacto());
   if (text === '6') return iniciarDescuento(chatId, session);
   if (text === '7') return iniciarConsultaCiudad(chatId, session);
-  await send(chatId, txtMenu());
+  await send(chatId, `🤔 No reconocí esa opción.\n\n${txtMenu()}`);
 }
 
 async function startCollection(chatId, session, key) {
@@ -504,7 +515,7 @@ async function showCart(chatId, session) {
   let msg = `🛒 *Tu carrito:*\n\n`;
   session.cart.forEach((item, i) => { msg += `${i + 1}. ${item.name} — ${fmt(item.price)}\n`; });
   msg += `\n💰 *Total: ${fmt(cartTotal(session.cart))}*\n\n`;
-  msg += `*pagar* — proceder al pago\n*vaciar* — limpiar carrito\n*0* — seguir comprando`;
+  msg += `*pagar* — proceder al pago\n*quitar <número>* — eliminar un producto (ej. *quitar 2*)\n*vaciar* — limpiar carrito\n*0* — seguir comprando`;
 
   session.state = 'cart_view';
   await send(chatId, msg);
@@ -521,7 +532,19 @@ async function handleCartView(chatId, text, session) {
     return send(chatId, `🗑️ Carrito vaciado.\n\n${txtMenu()}`);
   }
   if (text === '0') { resetSession(chatId); return send(chatId, txtMenu()); }
-  await send(chatId, `Escribe *pagar*, *vaciar*, o *0* para volver.`);
+
+  const quitarMatch = text.match(/^quitar\s+(\d+)$/);
+  if (quitarMatch) {
+    const idx = parseInt(quitarMatch[1], 10) - 1;
+    if (idx < 0 || idx >= session.cart.length) {
+      return send(chatId, `⚠️ No hay ningún producto con ese número. Mira la lista y escribe *quitar* seguido del número.`);
+    }
+    const [removed] = session.cart.splice(idx, 1);
+    await send(chatId, `🗑️ *${removed.name}* eliminada del carrito.`);
+    return showCart(chatId, session);
+  }
+
+  await send(chatId, `Escribe *pagar*, *vaciar*, *quitar <número>*, o *0* para volver.`);
 }
 
 // ─── HANDLERS: CAPTURA DE DATOS ──────────────────────────────────────────
@@ -704,19 +727,22 @@ async function handleMessage(msg) {
 
   const session = getSession(chatId);
 
-  // Comandos globales de reinicio
-  if (['menu', 'inicio', 'hola', 'hi', 'buenas'].some(k => text.startsWith(k))) {
+  // Comandos globales de reinicio. Dentro de un estado de captura de texto
+  // libre (nombre, dirección, etc.) exigimos coincidencia EXACTA en vez de
+  // prefijo — "hi" o "buenas" como prefijo puede ser el inicio real de un
+  // dato que el cliente está escribiendo (ej. dirección "Hipódromo, Bogotá").
+  const RESET_WORDS = ['menu', 'inicio', 'hola', 'hi', 'buenas'];
+  const esComandoReset = ESTADOS_CAPTURA.includes(session.state)
+    ? RESET_WORDS.includes(text)
+    : RESET_WORDS.some(k => text.startsWith(k));
+  if (esComandoReset) {
     resetSession(chatId);
     return send(chatId, txtMenu());
   }
 
   // Detección global de descuentos / venta al por mayor
   // No interrumpe estados de captura (compra normal ni flujo mayoreo activo)
-  const estadosCaptura = [
-    'datos_nombre', 'datos_telefono', 'datos_direccion', 'datos_ciudad', 'datos_depto', 'datos_correo', 'confirmacion',
-    'mayoreo_intro', 'mayoreo_nombre', 'mayoreo_telefono', 'mayoreo_cantidad', 'mayoreo_coleccion', 'mayoreo_correo', 'mayoreo_confirmar',
-  ];
-  if (!estadosCaptura.includes(session.state) && session.state !== 'consulta_ciudad') {
+  if (!ESTADOS_CAPTURA.includes(session.state) && session.state !== 'consulta_ciudad') {
     if (DISCOUNT_TRIGGERS.some(k => text.includes(k))) {
       return iniciarDescuento(chatId, session);
     }
@@ -788,8 +814,13 @@ api.post('/whatsapp/webhook', express.json(), async (req, res) => {
     if (!message) return; // eventos que no son mensajes entrantes (statuses, etc.)
 
     const chatId = `whatsapp:+${message.from}`;
-    const body   = message.type === 'text' ? message.text.body : '';
-    await handleMessage({ from: chatId, body });
+
+    if (message.type !== 'text') {
+      await send(chatId, `🙏 Por ahora solo puedo leer mensajes de *texto*.\n\nEscribe *menu* para ver el catálogo de gorras.`);
+      return;
+    }
+
+    await handleMessage({ from: chatId, body: message.text.body });
   } catch (err) {
     console.error('Error en mensaje de WhatsApp:', err.message);
   }
@@ -841,6 +872,16 @@ api.post('/enviar-correo', async (req, res) => {
 
   res.json({ ok: true });
 });
+
+// Limpieza de sesiones abandonadas — sin esto, `sessions` crece para siempre
+// con un objeto por cada número que alguna vez escribió.
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas sin actividad
+setInterval(() => {
+  const now = Date.now();
+  for (const [chatId, session] of sessions) {
+    if (now - session.lastActivity > SESSION_TTL_MS) sessions.delete(chatId);
+  }
+}, 60 * 60 * 1000); // revisa cada hora
 
 api.listen(API_PORT, () => {
   console.log(`🌐 API de notificaciones activa en http://localhost:${API_PORT}`);
