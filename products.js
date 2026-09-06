@@ -2,7 +2,7 @@
 
 const path = require('path');
 
-const IMG = path.resolve(__dirname, '..', 'images');
+const IMG = path.resolve(__dirname, 'images');
 
 const PRICE_AGRO = 75000;   // 🌾 Agropecuario 2026
 const PRICE_COL  = 75000;   // 🇨🇴 República de Colombia

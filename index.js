@@ -11,10 +11,11 @@ const { sendOrderEmail, sendMayoreoEmail } = require('./mailer');
 const { saveOrder, isDuplicateOrder } = require('./db');
 
 // ─── IMÁGENES ─────────────────────────────────────────────────────────────────
-// Mismo cálculo de raíz que products.js (path.resolve(__dirname, '..', 'images')),
-// necesario aquí para convertir la ruta absoluta de cada producto en una URL
-// pública que Meta pueda descargar (no acepta rutas de archivo locales).
-const IMAGES_ROOT = path.resolve(__dirname, '..', 'images');
+// La carpeta chatbot/ es su propio repo git, separado del resto del proyecto
+// (Railway solo despliega este repo) — por eso las fotos viven DENTRO de él,
+// en chatbot/images/, sincronizadas desde la carpeta images/ de la raíz por
+// optimize_images.py. Mismo cálculo de raíz que products.js.
+const IMAGES_ROOT = path.resolve(__dirname, 'images');
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 
 function imagePublicUrl(absPath) {
@@ -50,6 +51,20 @@ function newSession() {
 
 function resetSession(chatId) {
   sessions.set(chatId, newSession());
+}
+
+// Vuelve al menú principal SIN perder el carrito — a diferencia de
+// resetSession(), reservada para cuando el pedido ya se completó, se
+// canceló, o el cliente pidió vaciar el carrito explícitamente.
+async function volverAlMenu(chatId, session) {
+  session.state = 'menu';
+  session.collection = null;
+  session.currentProduct = null;
+  session.datos = {};
+  session.datosMayoreo = {};
+  session.prevState = null;
+  session.ciudadCandidatos = null;
+  await send(chatId, txtMenu());
 }
 
 // Estados en los que el cliente está dictando datos de texto libre (nombre,
@@ -193,7 +208,7 @@ async function sendCollectionList(chatId, key) {
 
 // ─── HANDLER: COLECCIÓN (lista) ────────────────────────────────────────────
 async function handleCollection(chatId, text, session) {
-  if (text === '0') { resetSession(chatId); return send(chatId, txtMenu()); }
+  if (text === '0') { return volverAlMenu(chatId, session); }
 
   const col = collections[session.collection];
   const idx = parseInt(text, 10) - 1;
@@ -218,7 +233,7 @@ async function handleCollection(chatId, text, session) {
 
 // ─── HANDLER: VIENDO PRODUCTO ─────────────────────────────────────────────
 async function handleViewingProduct(chatId, text, session) {
-  if (text === '0') { resetSession(chatId); return send(chatId, txtMenu()); }
+  if (text === '0') { return volverAlMenu(chatId, session); }
 
   if (ES_SI.includes(text)) {
     const p = session.currentProduct;
@@ -531,7 +546,7 @@ async function handleCartView(chatId, text, session) {
     session.state = 'menu';
     return send(chatId, `🗑️ Carrito vaciado.\n\n${txtMenu()}`);
   }
-  if (text === '0') { resetSession(chatId); return send(chatId, txtMenu()); }
+  if (text === '0') { return volverAlMenu(chatId, session); }
 
   const quitarMatch = text.match(/^quitar\s+(\d+)$/);
   if (quitarMatch) {
@@ -736,8 +751,7 @@ async function handleMessage(msg) {
     ? RESET_WORDS.includes(text)
     : RESET_WORDS.some(k => text.startsWith(k));
   if (esComandoReset) {
-    resetSession(chatId);
-    return send(chatId, txtMenu());
+    return volverAlMenu(chatId, session);
   }
 
   // Detección global de descuentos / venta al por mayor
