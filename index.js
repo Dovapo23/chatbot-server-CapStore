@@ -64,18 +64,7 @@ async function volverAlMenu(chatId, session) {
   session.datosMayoreo = {};
   session.prevState = null;
   session.ciudadCandidatos = null;
-
-  if (session.cart.length > 0) {
-    const n = session.cart.length;
-    await send(
-      chatId,
-      `🛒 Ya tienes *${n}* gorra${n > 1 ? 's' : ''} seleccionada${n > 1 ? 's' : ''} en tu carrito — *${fmt(cartTotal(session.cart))}*\n\n` +
-      `Escribe *4* para verlo y continuar con tu pedido, o elige otra opción:\n\n${txtMenu()}`
-    );
-    return;
-  }
-
-  await send(chatId, txtMenu());
+  await send(chatId, txtMenu(session));
 }
 
 // Estados en los que el cliente está dictando datos de texto libre (nombre,
@@ -164,7 +153,14 @@ const CITY_QUERY_TRIGGERS = [
 ];
 
 // ─── TEXTOS ───────────────────────────────────────────────────────────────────
-function txtMenu() {
+// Si se pasa la sesión y ya tiene productos, la línea "4" se resalta con la
+// cantidad y el total — para que no haya que adivinar que el carrito sigue
+// ahí después de volver al menú desde otro punto del flujo.
+function txtMenu(session) {
+  const n = session?.cart?.length || 0;
+  const linea4 = n > 0
+    ? `*4* — 🛒 *Continuar con tu pedido* (${n} gorra${n > 1 ? 's' : ''} — ${fmt(cartTotal(session.cart))}) 👈`
+    : `*4* — 🛒 Ver mi carrito`;
   return (
     `¡Hola! 👋 Bienvenido a *🧢 The Cap Store Online*\n` +
     `Tu tienda de gorras colombianas de calidad.\n` +
@@ -173,7 +169,7 @@ function txtMenu() {
     `*1* — 🌾 Colección Agropecuario 2026\n` +
     `*2* — 💎 New Era Colección Luxury\n` +
     `*3* — 🇨🇴 República de Colombia\n` +
-    `*4* — 🛒 Ver mi carrito\n` +
+    `${linea4}\n` +
     `*5* — 📞 Contacto\n` +
     `*6* — 🎁 Descuentos y pedidos al por mayor\n` +
     `*7* — 📦 Ciudades con envío incluido\n\n` +
@@ -200,7 +196,7 @@ async function handleMenu(chatId, text, session) {
   if (text === '5') return send(chatId, txtContacto());
   if (text === '6') return iniciarDescuento(chatId, session);
   if (text === '7') return iniciarConsultaCiudad(chatId, session);
-  await send(chatId, `🤔 No reconocí esa opción.\n\n${txtMenu()}`);
+  await send(chatId, `🤔 No reconocí esa opción.\n\n${txtMenu(session)}`);
 }
 
 async function startCollection(chatId, session, key) {
