@@ -699,7 +699,11 @@ async function handleConfirmacion(chatId, text, session) {
       productos: session.cart,
       total:     cartTotal(session.cart),
       pago:      'Contra entrega en efectivo',
-      estado:    'pendiente'
+      // 'correo' es el único dato opcional del flujo (el cliente puede omitirlo
+      // con 'no' en datos_correo); si falta, el pedido queda 'pendiente' hasta
+      // que el negocio lo complete a mano. El resto de campos son obligatorios
+      // por el propio flujo de estados, así que nunca pueden faltar aquí.
+      estado:    session.datos.correo ? 'confirmado' : 'pendiente'
     };
 
     try {
