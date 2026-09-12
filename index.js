@@ -4,10 +4,11 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const path     = require('path');
 const express  = require('express');
+const rateLimit = require('express-rate-limit');
 const cors     = require('cors');
 const { collections } = require('./products');
 const { findCity, listadoCiudades } = require('./cities');
-const { sendOrderEmail, sendMayoreoEmail } = require('./mailer');
+const { sendOrderEmail, sendMayoreoEmail, sendContactEmail } = require('./mailer');
 const { saveOrder, isDuplicateOrder } = require('./db');
 
 // ─── IMÁGENES ─────────────────────────────────────────────────────────────────
@@ -801,7 +802,30 @@ async function handleMessage(msg) {
 
 // ─── API HTTP — webhook de WhatsApp + notificaciones desde el sitio web ──────
 const API_PORT = process.env.API_PORT || 8080;
-const API_KEY  = process.env.API_KEY  || 'capsstore2026';
+// Nota: esta clave viaja en el JS público del sitio (el navegador la manda en cada
+// llamada a /enviar-correo), así que nunca es un secreto real — solo evita que
+// cualquiera dispare el endpoint sin más. El valor anterior ('capsstore2026') quedó
+// documentado en texto plano en CLAUDE.md; se rotó a este nuevo valor el 2026-09-12.
+const API_KEY = process.env.API_KEY || '755bd8270e14e4469029c3da0f0d2973cf48a7c00e59d2bc';
+if (!process.env.API_KEY) {
+  console.warn('⚠️  API_KEY no está configurada en Railway → Variables — usando el valor por defecto embebido en el código. Para mayor prolijidad, configura tu propio valor en Railway (debe coincidir con el que usa script.js en el sitio).');
+}
+
+// Restringe qué orígenes de navegador pueden llamar /enviar-correo directamente
+// (no protege contra un curl directo, pero sí evita que otro sitio use el
+// navegador de un visitante para golpear el endpoint).
+const corsSitioWeb = cors({ origin: ['https://dovapo23.github.io'] });
+
+// La API key viaja en el JS público del sitio, así que no protege realmente el
+// endpoint — solo evita abuso casual. Este límite de tasa reduce el daño si
+// alguien la copia del código fuente y la usa para mandar correos en bucle.
+const enviarCorreoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes, intenta más tarde' },
+});
 
 const api = express();
 api.use(cors());
@@ -859,12 +883,26 @@ api.use((req, res, next) => {
 });
 
 // POST /enviar-correo  → endpoint unificado para pedido normal y al por mayor (web)
-api.post('/enviar-correo', async (req, res) => {
-  const { type, numeroPedido, datosCliente, producto, coleccion, precio, dm } = req.body;
+api.post('/enviar-correo', corsSitioWeb, enviarCorreoLimiter, async (req, res) => {
+  const { type, numeroPedido, datosCliente, producto, coleccion, precio, dm, nombre, correo, mensaje } = req.body;
   const fecha = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
 
-  if (type === 'order') {
-    if (!numeroPedido || !datosCliente) return res.status(400).json({ error: 'Datos incompletos' });
+  if (type === 'contact') {
+    if (!nombre || !correo || !mensaje) return res.status(400).json({ error: 'Datos incompletos' });
+    if (nombre.length > 200 || correo.length > 200 || mensaje.length > 5000) {
+      return res.status(400).json({ error: 'Datos demasiado largos' });
+    }
+    sendContactEmail(nombre, correo, mensaje, fecha).catch(err => console.error('API contact:', err.message));
+
+  } else if (type === 'order') {
+    if (!numeroPedido || !datosCliente || !producto) return res.status(400).json({ error: 'Datos incompletos' });
+    if (typeof numeroPedido !== 'string' || numeroPedido.length > 40) {
+      return res.status(400).json({ error: 'numeroPedido inválido' });
+    }
+    const camposTexto = [datosCliente.nombre, datosCliente.direccion, datosCliente.ciudad, datosCliente.depto, datosCliente.correo, producto.name];
+    if (camposTexto.some(v => v != null && String(v).length > 300)) {
+      return res.status(400).json({ error: 'Datos demasiado largos' });
+    }
     const order = {
       id:         numeroPedido,
       referencia: numeroPedido,
@@ -885,10 +923,14 @@ api.post('/enviar-correo', async (req, res) => {
 
   } else if (type === 'mayoreo') {
     if (!dm || !dm.nombre) return res.status(400).json({ error: 'Datos incompletos' });
+    const camposMayoreo = [dm.nombre, dm.celular, dm.coleccion, dm.correo];
+    if (camposMayoreo.some(v => v != null && String(v).length > 300)) {
+      return res.status(400).json({ error: 'Datos demasiado largos' });
+    }
     sendMayoreoEmail(dm, fecha, '(web)').catch(err => console.error('API mayoreo:', err.message));
 
   } else {
-    return res.status(400).json({ error: 'type inválido (order | mayoreo)' });
+    return res.status(400).json({ error: 'type inválido (contact | order | mayoreo)' });
   }
 
   res.json({ ok: true });
