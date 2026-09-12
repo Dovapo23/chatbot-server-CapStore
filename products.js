@@ -32,7 +32,7 @@ const collections = {
     products: [
       { id: 'col-1',  name: 'República de Colombia Negra',           image: path.join(IMG, 'colombia', 'colombia-negra.jpeg'),            price: PRICE_COL },
       { id: 'col-2',  name: 'República de Colombia Roja',            image: path.join(IMG, 'colombia', 'colombia-roja.jpeg'),             price: PRICE_COL },
-      { id: 'col-3',  name: 'República de Colombia Edición Especial',image: path.join(IMG, 'colombia', 'colombia-edicion-especial.jpeg'), price: PRICE_COL },
+      { id: 'col-3',  name: 'Colombia Azul Escudo Dorado',            image: path.join(IMG, 'colombia', 'colombia-edicion-especial.jpeg'), price: PRICE_COL },
       { id: 'col-4',  name: 'República de Colombia Clásica',         image: path.join(IMG, 'colombia', 'colombia-clasica.jpeg'),          price: PRICE_COL },
       { id: 'col-5',  name: 'Colombia Rosa Escudo Dorado',           image: path.join(IMG, 'colombia', 'colombia-cafe-escudo.jpeg'),      price: PRICE_COL },
       { id: 'col-6',  name: 'República de Colombia Blanca',          image: path.join(IMG, 'colombia', 'colombia-blanca.jpeg'),           price: PRICE_COL },
