@@ -828,6 +828,7 @@ const enviarCorreoLimiter = rateLimit({
 });
 
 const api = express();
+api.set('trust proxy', 1); // Railway pone la app detrás de un proxy; sin esto, express-rate-limit no puede leer X-Forwarded-For
 api.use(cors());
 
 // Sirve las fotos de producto como estáticas para que Meta pueda

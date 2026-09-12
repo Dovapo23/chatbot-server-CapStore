@@ -6,7 +6,11 @@ const nodemailer = require('nodemailer');
 const NOTIFY_TO = 'thecapstoreonline@gmail.com';
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,   // STARTTLS en vez de TLS directo (puerto 465) -- algunos hosts bloquean 465 pero no 587
+  requireTLS: true,
+  connectionTimeout: 10000,
   auth: {
     user: process.env.MAIL_USER,
     pass: process.env.MAIL_PASS,   // Contraseña de Aplicación de Google (no la contraseña normal)
