@@ -699,11 +699,12 @@ async function handleConfirmacion(chatId, text, session) {
       productos: session.cart,
       total:     cartTotal(session.cart),
       pago:      'Contra entrega en efectivo',
-      // 'correo' es el único dato opcional del flujo (el cliente puede omitirlo
-      // con 'no' en datos_correo); si falta, el pedido queda 'pendiente' hasta
-      // que el negocio lo complete a mano. El resto de campos son obligatorios
-      // por el propio flujo de estados, así que nunca pueden faltar aquí.
-      estado:    session.datos.correo ? 'confirmado' : 'pendiente'
+      // Nombre, telefono, direccion, ciudad y departamento son obligatorios por
+      // el propio flujo de estados (nunca pueden faltar aqui) y son suficientes
+      // para confirmar el pedido. 'correo' es opcional (el cliente puede
+      // omitirlo con 'no' en datos_correo): agrega valor como canal de
+      // contacto extra, pero no bloquea que el pedido pase a confirmado.
+      estado:    'confirmado'
     };
 
     try {
@@ -718,7 +719,7 @@ async function handleConfirmacion(chatId, text, session) {
     }
     console.log(`\n🛍️  Pedido [${order.referencia}] — ${order.cliente.nombre} — ${fmt(order.total)}`);
 
-    // Notificación por correo (fire-and-forget, no bloquea la respuesta al cliente)
+    // Notificación por correo (fire-and-forget, no bloquea la respuesta al cliente).
     sendOrderEmail(order).catch(err => console.error('Mailer:', err.message));
 
     await send(
