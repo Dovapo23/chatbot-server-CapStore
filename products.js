@@ -39,8 +39,7 @@ const collections = {
       { id: 'col-7',  name: 'Colombia Café Bordado Dorado',          image: path.join(IMG, 'colombia', 'colombia-blanca-bordada.jpeg'),   price: PRICE_COL },
       { id: 'col-8',  name: 'Colombia Beige Especial',               image: path.join(IMG, 'colombia', 'colombia-tricolor-especial.jpeg'),price: PRICE_COL },
       { id: 'col-9',  name: 'Colombia Premium Dorada',               image: path.join(IMG, 'colombia', 'colombia-premium-dorada.jpeg'),   price: PRICE_COL },
-      { id: 'col-10', name: 'República de Colombia Verde Militar',   image: path.join(IMG, 'colombia', 'colombia-verde-militar.jpeg'),    price: PRICE_COL },
-      { id: 'col-11', name: 'Colombia Edición Limitada',             image: path.join(IMG, 'colombia', 'colombia-edicion-limitada.jpeg'), price: PRICE_COL },
+      { id: 'col-11', name: 'Colombia Verde Edición Limitada',       image: path.join(IMG, 'colombia', 'colombia-edicion-limitada.jpeg'), price: PRICE_COL },
     ]
   },
 
