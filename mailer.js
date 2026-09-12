@@ -1,21 +1,13 @@
 'use strict';
 
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 const NOTIFY_TO = 'thecapstoreonline@gmail.com';
+// Dirección remitente: dominio de pruebas de Resend hasta que se verifique un dominio propio.
+const FROM = 'The Cap Store Bot <onboarding@resend.dev>';
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,   // STARTTLS en vez de TLS directo (puerto 465) -- algunos hosts bloquean 465 pero no 587
-  requireTLS: true,
-  connectionTimeout: 10000,
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS,   // Contraseña de Aplicación de Google (no la contraseña normal)
-  },
-});
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 const fmt = n => `$${Number(n).toLocaleString('es-MX')}`;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,8 +17,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
  * Se llama sin await (fire-and-forget) para no bloquear la respuesta al cliente.
  */
 async function sendOrderEmail(order) {
-  if (!process.env.MAIL_USER || process.env.MAIL_PASS === 'xxxx xxxx xxxx xxxx') {
-    console.warn(`⚠️  Correo no configurado (.env). Pedido #${order.id} guardado sin notificación de email.`);
+  if (!resend) {
+    console.warn(`⚠️  RESEND_API_KEY no configurada. Pedido #${order.id} guardado sin notificación de email.`);
     return;
   }
 
@@ -81,12 +73,13 @@ async function sendOrderEmail(order) {
   </div>`;
 
   try {
-    await transporter.sendMail({
-      from: `"The Cap Store Bot" <${process.env.MAIL_USER}>`,
+    const { error } = await resend.emails.send({
+      from: FROM,
       to: NOTIFY_TO,
       subject: `Nuevo Pedido de ${order.cliente.nombre}`,
       html,
     });
+    if (error) throw new Error(error.message || JSON.stringify(error));
     console.log(`📧 Notificación enviada → ${NOTIFY_TO} (Pedido #${order.id})`);
   } catch (err) {
     console.error('❌ Error al enviar correo de notificación:', err.message);
@@ -98,8 +91,8 @@ async function sendOrderEmail(order) {
  * Subject: "Nuevo Pedido al por mayor [nombre]"
  */
 async function sendMayoreoEmail(datos, fecha, whatsapp) {
-  if (!process.env.MAIL_USER || process.env.MAIL_PASS === 'xxxx xxxx xxxx xxxx') {
-    console.warn('⚠️  Correo no configurado. Lead mayoreo sin notificación.');
+  if (!resend) {
+    console.warn('⚠️  RESEND_API_KEY no configurada. Lead mayoreo sin notificación.');
     return;
   }
 
@@ -131,12 +124,13 @@ async function sendMayoreoEmail(datos, fecha, whatsapp) {
   </div>`;
 
   try {
-    await transporter.sendMail({
-      from: `"The Cap Store Bot" <${process.env.MAIL_USER}>`,
+    const { error } = await resend.emails.send({
+      from: FROM,
       to: NOTIFY_TO,
       subject: `Nuevo Pedido al por mayor ${datos.nombre}`,
       html,
     });
+    if (error) throw new Error(error.message || JSON.stringify(error));
     console.log(`📧 Lead mayoreo enviado → ${NOTIFY_TO} (${datos.nombre})`);
   } catch (err) {
     console.error('❌ Error al enviar correo mayoreo:', err.message);
@@ -147,8 +141,8 @@ async function sendMayoreoEmail(datos, fecha, whatsapp) {
  * Envía correo de notificación cuando alguien usa el formulario de contacto del sitio web.
  */
 async function sendContactEmail(nombre, correo, mensaje, fecha) {
-  if (!process.env.MAIL_USER || process.env.MAIL_PASS === 'xxxx xxxx xxxx xxxx') {
-    console.warn('⚠️  Correo no configurado. Mensaje de contacto sin notificación.');
+  if (!resend) {
+    console.warn('⚠️  RESEND_API_KEY no configurada. Mensaje de contacto sin notificación.');
     return;
   }
 
@@ -171,13 +165,14 @@ async function sendContactEmail(nombre, correo, mensaje, fecha) {
   </div>`;
 
   try {
-    await transporter.sendMail({
-      from: `"The Cap Store Bot" <${process.env.MAIL_USER}>`,
+    const { error } = await resend.emails.send({
+      from: FROM,
       to: NOTIFY_TO,
-      replyTo: correo || undefined,
+      reply_to: correo || undefined,
       subject: `Nuevo mensaje de contacto — ${nombre}`,
       html,
     });
+    if (error) throw new Error(error.message || JSON.stringify(error));
     console.log(`📧 Mensaje de contacto enviado → ${NOTIFY_TO} (${nombre})`);
   } catch (err) {
     console.error('❌ Error al enviar correo de contacto:', err.message);
